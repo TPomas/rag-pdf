@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Union
 from uuid import uuid4
 
 from torch import Tensor
@@ -66,7 +66,7 @@ class DataElement(dict):
     """ The content field can contain text or Base64 encoded image data."""
     id: uuid4
     data_type: DataType
-    content: str | bytes
+    content: Union[str,bytes]
     metadata: Metadata
     embeddings: Optional[Tensor] = None
 

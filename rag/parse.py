@@ -56,7 +56,7 @@ def parse(
     logger.info(f"Processing {input_file}")
     elements = partition(
         filename=input_file,
-        skip_infer_table_types=[],
+        #skip_infer_table_types=[],
         strategy=strategy,
         chunking_strategy=chunking_strategy,
         combine_text_under_n_chars=combine_text_under_n_chars,

@@ -14,6 +14,7 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.huggingface import HuggingFaceLLM
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from transformers import AutoTokenizer, PreTrainedTokenizer
+from llama_index.llms.openllm import OpenLLM
 
 from rag._defaults import DEFAULT_HF_CHAT_MODEL, DEFAULT_HF_EMBED_MODEL, DEFAULT_SYTEM_PROMPT
 
@@ -44,9 +45,43 @@ def get_llama3_1_instruct_str(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": dedent(context_and_query).strip("\n")},
     ]
+    
     return tokenizer.decode(tokenizer.apply_chat_template(messages, add_generation_prompt=True))
 
-
+def get_complete_prompt(query: str,
+    nodes: list[NodeWithScore],
+    system_prompt: str = DEFAULT_SYTEM_PROMPT,
+) -> str:
+    
+    context_str = ""
+    
+    for node in nodes:
+        print(f"Context: {node.metadata}")
+        context_str += node.text.replace("\n", "  \n")
+    print(f"\nUsing {context_str=}\n")
+     
+    instructions = dedent("""
+    You are an assistant for answering questions.
+    You are given the extracted parts of a long document and a question. Provide a conversational answer.
+    If you don't know the answer, just say "I do not know." Don't make up an answer.
+    """).strip("\n")
+    
+    text_qa_template_str_llama3 = f"""
+        <|begin_of_text|><|start_header_id|>user<|end_header_id|>
+        Context information is
+        below.
+        ---------------------
+        {context_str}
+        ---------------------
+        Using
+        the context information, answer the question: {query}
+        {instructions}
+        <|eot_id|><|start_header_id|>assistant<|end_header_id|>
+        """
+    
+    return text_qa_template_str_llama3
+    
+    
 def get_llm(
     model_name: str,
     tokenizer: PreTrainedTokenizer,
@@ -63,29 +98,64 @@ def get_llm(
         "top_p": top_p,
     }
     model_kwargs = {"torch_dtype": torch.bfloat16}
-    if use_4bit_quant:
-        if not torch.cuda.is_available():
-            raise ValueError("--use-4bit-quant requires a GPU")
-        from transformers import BitsAndBytesConfig
-
-        model_kwargs = {
-            "quantization_config": BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_use_double_quant=True,
-            )
-        }
+    
+    # MLIS endpoint
+    if model_name.startswith("http"):
+        print(f"Using OpenLLM model endpoint: {args.path_to_chat_model}")
+        modelpath = str(args.path_to_chat_model)
+        llm = OpenLLM(address=modelpath, generate_kwargs=generate_kwargs)
+        
+    # Garrett optimized code
     else:
-        model_kwargs = {"torch_dtype": torch.bfloat16}
-    llm = HuggingFaceLLM(
-        model_name=model_name,
-        tokenizer_name=model_name,
-        generate_kwargs=generate_kwargs,
-        max_new_tokens=max_new_tokens,
-        stopping_ids=[tokenizer.eos_token_id],
-        model_kwargs=model_kwargs,
-    )
+        if use_4bit_quant:
+            if not torch.cuda.is_available():
+                raise ValueError("--use-4bit-quant requires a GPU")
+            from transformers import BitsAndBytesConfig
+
+            model_kwargs = {
+                "quantization_config": BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_compute_dtype=torch.float16,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_use_double_quant=True,
+                )
+            }
+        else:
+            model_kwargs = {"torch_dtype": torch.bfloat16}
+        llm = HuggingFaceLLM(
+            model_name=model_name,
+            tokenizer_name=model_name,
+            generate_kwargs=generate_kwargs,
+            max_new_tokens=max_new_tokens,
+            stopping_ids=[tokenizer.eos_token_id],
+            model_kwargs=model_kwargs,
+        )
+    pprint(f"Loaded model {model_name}")
+    return llm
+
+def get_llm_from_endpoint(
+    model_name: str,
+    temp: float,
+    max_new_tokens: int,
+    top_p: float,
+) -> OpenLLM:
+    pprint(f"Using HF model: {model_name}")
+
+    generate_kwargs = {
+        "do_sample": True,
+        "temperature": temp,
+        "top_p": top_p,
+    }
+    model_kwargs = {"torch_dtype": torch.bfloat16}
+    
+    # MLIS endpoint
+    if model_name.startswith("http"):
+        print(f"Using OpenLLM model endpoint: {model_name}")
+        modelpath = str(model_name)
+        llm = OpenLLM(address=model_name, generate_kwargs=generate_kwargs)
+    else:
+        print("Expected loading model from endpoint")
+    
     pprint(f"Loaded model {model_name}")
     return llm
 
@@ -93,12 +163,14 @@ def get_llm(
 def load_data(
     embedding_model_path: str, path_to_db: str
 ) -> tuple[VectorStoreIndex, chromadb.GetResult]:
+    
     if embedding_model_path.startswith("http"):
         pprint(f"Using Embedding API model endpoint: {embedding_model_path}")
         embed_model = OpenAIEmbedding(api_base=embedding_model_path, api_key="dummy")
     else:
         pprint(f"Embedding model: {embedding_model_path}")
         embed_model = HuggingFaceEmbedding(model_name=embedding_model_path)
+        
     chroma_client = chromadb.PersistentClient(path_to_db)
     chroma_collection = chroma_client.get_collection(name="documents")
     vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
@@ -197,35 +269,48 @@ if __name__ == "__main__":
         action="store_true",
     )
     args = parser.parse_args()
-    if "Meta-Llama-3.1" not in args.model_name:
+    #if "Meta-Llama-3.1" not in args.model_name:
         # Only tested with Meta-Llama-3.1 so far. The system prompt and tokenization would need to
         # be adjusted for other models.
-        raise ValueError(f"Script expects a Llama-3.1 model, not {args.model_name}")
+    #    raise ValueError(f"Script expects a Llama-3.1 model, not {args.model_name}")
 
     if args.top_k_reranker and args.top_k_reranker > args.top_k_retriever:
         raise ValueError("top_k_reranker, if provided, must be smaller than top_k_retriever.")
 
     index, _ = load_data(args.embedding_model_path, args.path_to_db)
+    print("DB loaded")
+    
     retriever = create_retriever(
         cutoff=args.cutoff, top_k_retriever=args.top_k_retriever, filters=None
     )
-    reranker = LLMRerank(top_n=args.top_k_reranker) if args.top_k_reranker else None
+    print("Retriever created")
+    
+    #reranker = LLMRerank(top_n=args.top_k_reranker) if args.top_k_reranker else None
+    reranker = None
 
     nodes = get_nodes(args.query, retriever, reranker)
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+    print("Nodes obtained")
+    
+    #if not args.model_name.startswith("http"):
+    #    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
-    prefix = get_llama3_1_instruct_str(args.query, nodes, tokenizer)
+    #prefix = get_llama3_1_instruct_str(args.query, nodes, tokenizer)
+    prefix = get_complete_prompt(args.query, nodes)
 
     print(f"\n{prefix=}\n")
+    
+    
 
-    llm = get_llm(
-        args.model_name,
-        tokenizer,
-        args.temp,
-        args.max_new_tokens,
-        args.top_p,
-        args.use_4bit_quant,
-    )
+    #llm = get_llm(
+    #    args.model_name,
+    #    tokenizer,
+    #    args.temp,
+    #    args.max_new_tokens,
+    #    args.top_p,
+    #    args.use_4bit_quant,
+    #)
+    llm = get_llm_from_endpoint(args.model_name, args.temp,args.max_new_tokens, args.top_p)
+    
     output_response = llm.complete(prefix)
     print(f"\n{output_response.text=}\n")
 

@@ -1,0 +1,33 @@
+{
+  "pipeline": {
+    "name": "parse-docs",
+    "project": {
+      "name": "draft_project2"
+    }
+  },
+  "transform": {
+    "image": "tpomas/abb_rag:0.0.3",
+    "cmd": [
+      "/bin/bash",
+      "-C"
+    ],
+    "stdin": [
+	  "python -m parse --input /pfs/documents --output /pfs/out --chunking_strategy by_title --folder_tags --combine_text_under_n_chars 50 --max_characters 1500 --new_after_n_chars 1500"
+    ],
+    "env": {
+      "PYTHON_UNBUFFERED": "1"
+    }
+  },
+  "input": {
+    "pfs": {
+      "repo": "RFQs",
+      "name": "documents",
+      "glob": "/*"
+    }
+  },
+  "resourceRequests": {
+    "cpu": 4,
+    "memory": "16Gi",
+    "disk": "10Gi"
+  }
+}

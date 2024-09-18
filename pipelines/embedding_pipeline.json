@@ -1,0 +1,28 @@
+{
+  "pipeline": {
+    "name": "embed-docs",
+    "project": {
+      "name": "draft_project2"
+    }
+  },
+  "transform": {
+    "image": "tpomas/abb_rag:0.0.3",
+    "cmd": [
+      "/bin/bash",
+      "-C"
+    ],
+    "stdin": [
+	  "python -m embed --data-path /pfs/data --path-to-db /pfs/out --embedding_model_path PATH"
+    ],
+    "env": {
+      "PYTHON_UNBUFFERED": "1"
+    }
+  },
+  "input": {
+    "pfs": {
+      "repo": "parse-docs",
+      "name": "data",
+      "glob": "/"
+    }
+  }
+}

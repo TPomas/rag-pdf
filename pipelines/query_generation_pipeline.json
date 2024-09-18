@@ -1,0 +1,41 @@
+{
+  "pipeline": {
+    "name": "apply-queries",
+    "project": {
+      "name": "draft_project2"
+    }
+  },
+  "transform": {
+    "image": "tpomas/abb_rag:0.0.3",
+    "cmd": [
+      "/bin/bash",
+      "-C"
+    ],
+    "stdin": [
+	  "python -m query --query-file /pfs/queries/queries.txt --output-folder /pfs/out --path-to-db /pfs/vectordb --model-name meta-llama/Meta-Llama-3.1-8B-Instruct --top-k-retriever 5 --embedding_model_path ENDPOINT --chat-model-endpoint ENDPOINT --query-all"
+    ],
+    "env": {
+      "PYTHON_UNBUFFERED": "1"
+    }
+  },
+  "input": {
+    "cross": [
+      {
+        "pfs": {
+          "project": "draft_project2",
+          "name": "queries",
+          "repo": "queries",
+          "glob": "/"
+        }
+      },
+      {
+        "pfs": {
+          "project": "draft_project2",
+          "name": "vectordb",
+          "repo": "embed-docs",
+          "glob": "/"
+        }
+      }
+    ]
+  }
+}

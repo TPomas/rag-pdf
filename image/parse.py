@@ -9,6 +9,7 @@ from loguru import logger
 from unstructured.partition.auto import partition
 
 from _defaults import DEFAULT_CHUNK_STRAT
+from _utils import get_tag_from_dir
 from rag_schema import DataElement, DataType, Document, Metadata
 
 
@@ -53,7 +54,7 @@ def parse(
     new_after_n_chars: Optional[int] = None,
     tag=None,
 ) -> None:
-    logger.info(f"Processing {input_file}")
+    logger.info(f"Processing {input_file}. Using {tag=}")
     elements = partition(
         filename=input_file,
         skip_infer_table_types=[],
@@ -72,8 +73,6 @@ def parse(
     if not output_path.parent.exists():
         print(f"Creating {input_file_path.parent.absolute()=}")
         os.makedirs(output_path.parent.absolute())
-    else:
-        print("Here")
     with open(output_path, "w") as f:
         logger.info(f"Writing output to {output_path}")
         json.dump(output_list, f, indent=4)
@@ -89,21 +88,25 @@ def main(
     new_after_n_chars: int,
     folder_tags: bool = False,
 ) -> None:
-    for dirpath, _, files in os.walk(input):
-        for file in files:
-            input_file = os.path.join(dirpath, file)
-            if folder_tags:
-                tag = dirpath.replace(input, "")
-                if tag.endswith("/"):
-                    tag = tag[:-1]
-                if tag.startswith("/"):
-                    tag = tag[1:]
-                if "/" in tag:
-                    tag = tag.split("/")[0]
-            else:
-                tag = None
+    # The expectation is that input is a directory which contains various subdirs and no files.
+    # Each subdir should itself only contain files, and not additional subdirs, and the contents of
+    # each subdir will be parsed and tagged together.
+    input_path = Path(input)
+    if input_path.is_file():
+        raise ValueError("Input must be a directory, not a file.")
+    for subdir in input_path.iterdir():
+        if subdir.is_file():
+            raise ValueError(
+                f"Input dir is expected to contain only subdirectories and no files. Found file {subdir=}"
+            )
+        tag = get_tag_from_dir(subdir) if folder_tags else None
+        for file in subdir.iterdir():
+            if file.is_dir():
+                raise ValueError(
+                    f"Subdirectories may only contain files and no additional subdirs. Found subdir {file=}"
+                )
             parse(
-                input_file,
+                file,
                 output,
                 strategy,
                 chunking_strategy,
@@ -117,7 +120,9 @@ def main(
 if __name__ == "__main__":
     print("\n**********  PARSING **********\n")
     parser = argparse.ArgumentParser(description="File Parser")
-    parser.add_argument("--input", type=str, help="input directory")
+    parser.add_argument(
+        "--input", type=str, help="Input directory containing to-be-parsed subdirectories."
+    )
     parser.add_argument("--output", default="./output", help="output directory")
     parser.add_argument("--strategy", default="auto", help="parsing strategy")
     parser.add_argument(

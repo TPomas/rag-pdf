@@ -1,26 +1,26 @@
 import argparse
+import os
 from pprint import pprint
 from textwrap import dedent
 from typing import Optional
 
 import chromadb
-import torch
 import pandas as pd
-import os
+import torch
 from llama_index.core import VectorStoreIndex
 from llama_index.core.postprocessor import LLMRerank, SimilarityPostprocessor
 from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.schema import NodeWithScore, QueryBundle
+from llama_index.core.vector_stores.types import MetadataFilter, MetadataFilters
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.huggingface import HuggingFaceLLM
 from llama_index.llms.openllm import OpenLLM
 from llama_index.vector_stores.chroma import ChromaVectorStore
-from llama_index.core.vector_stores.types import (MetadataFilter,
-                                                  MetadataFilters)
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
 from _defaults import DEFAULT_HF_CHAT_MODEL, DEFAULT_HF_EMBED_MODEL, DEFAULT_SYTEM_PROMPT
+from _utils import get_tag_from_dir
 
 
 def get_llama3_1_instruct_str(
@@ -31,9 +31,9 @@ def get_llama3_1_instruct_str(
 ) -> str:
     context_str = ""
     for node in nodes:
-        #print(f"Context: {node.metadata}")
+        # print(f"Context: {node.metadata}")
         context_str += node.text.replace("\n", "  \n")
-    #print(f"\nUsing {context_str=}\n")
+    # print(f"\nUsing {context_str=}\n")
 
     # https://huggingface.co/blog/not-lain/rag-chatbot-using-llama3
     context_and_query = f"""
@@ -134,61 +134,51 @@ def get_nodes(
         nodes = reranker.postprocess_nodes(nodes, query_bundle)
     return nodes
 
-def get_llm_answer(llm, tag, args, query_list=None):
 
-    filters=None
-    if tag:
-        filters = MetadataFilters(filters=[MetadataFilter(key="Tag", value=tag)], condition="or")
-    elif args.folder:
-        filters = MetadataFilters(filters=[MetadataFilter(key="Tag", value=args.folder)], condition="or")
-    
+def get_llm_answer(llm, tag, args, query_list=None):
+    filters = None
+    filters = MetadataFilters(filters=[MetadataFilter(key="Tag", value=tag)], condition="or")
+
     retriever = create_retriever(
         cutoff=args.cutoff, top_k_retriever=args.top_k_retriever, filters=filters
     )
-    
+
     d = {}
     d["Queries"] = []
     d["Answers"] = []
     d["Main Source"] = []
-    
-    if query_list:
-        d["Queries"] = query_list
-        
-        for q in query_list:
-            print("\nQuery: " + q)
-            nodes = get_nodes(q, retriever, reranker)
-            prefix = get_llama3_1_instruct_str(q, nodes, tokenizer)
-            
-            output_response = llm.complete(prefix)
-            print(f"{output_response.text=}\n")
-            
-            d["Answers"].append(output_response.text)
-            d["Main Source"].append(nodes[0].node.metadata["Source"] + ", page " + str(nodes[0].node.metadata["Page Number"]))
-    else:
-        d["Queries"] = [args.query]
-        
-        nodes = get_nodes(args.query, retriever, reranker)
-        prefix = get_llama3_1_instruct_str(args.query, nodes, tokenizer)
-        #print(f"\n{prefix=}\n")
+
+    query_list = query_list or [args.query]
+    d["Queries"] = query_list
+
+    for q in query_list:
+        print("\nQuery: " + q)
+        nodes = get_nodes(q, retriever, reranker)
+        prefix = get_llama3_1_instruct_str(q, nodes, tokenizer)
+
         output_response = llm.complete(prefix)
-        print(f"\n{output_response.text=}\n")
-        
+        print(f"{output_response.text=}\n")
+
         d["Answers"].append(output_response.text)
-        d["Main Source"].append(nodes[0].node.metadata["Source"] + ", page " + str(nodes[0].node.metadata["Page Number"]))
+        d["Main Source"].append(
+            nodes[0].node.metadata["Source"]
+            + ", page "
+            + str(nodes[0].node.metadata["Page Number"])
+        )
 
     if args.output_folder:
         output_df = pd.DataFrame(data=d)
-        
+
         suffix = "all_documents_mixed"
         if tag:
             suffix = tag
         elif args.folder:
             suffix = args.folder
-            
-        csv_name = args.output_folder + "/extracted_info_" + suffix +".csv"
-        print("Saving output to " + csv_name)
-        output_df.to_csv(csv_name, index=False)
-        
+
+        xlsx_name = args.output_folder + "/extracted_info_" + suffix + ".xlsx"
+        print("Saving output to " + xlsx_name)
+        output_df.to_excel(xlsx_name, index=False)
+
 
 def print_references(nodes):
     # TODO: @garrett.goon - Delete below, just for debugging/visuals
@@ -210,7 +200,7 @@ def print_references(nodes):
 if __name__ == "__main__":
     print("\n**********  QUERYING **********\n")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--query", type=str, default="What is the meaning of life?", help="Query to ask of the llm")
+    parser.add_argument("--query", type=str, default=None, help="Query to ask of the llm")
     parser.add_argument("--path-to-db", type=str, default="db", help="path to chroma db")
     parser.add_argument(
         "--embedding_model_path",
@@ -282,15 +272,10 @@ if __name__ == "__main__":
         help="Only use documents initially under that folder name.",
     )
     parser.add_argument(
-        "--query-all",
-        help="Query documents from each folder separately. Overrides the --folder argument.",
-        action="store_true",
-    )
-    parser.add_argument(
         "--query-file",
         default=None,
         type=str,
-        help="txt file containing a single query per line. Overrides the --query argument.",
+        help="txt file containing a single query per line or xlsx file containing queries in first columns. Overrides the --query argument.",
     )
     parser.add_argument(
         "--output-folder",
@@ -298,9 +283,12 @@ if __name__ == "__main__":
         type=str,
         help="Save queries output to csv files under that path.",
     )
-    
-    
+
     args = parser.parse_args()
+
+    if sum((bool(args.query), bool(args.query_file))) != 1:
+        raise ValueError("Exactly one of --query or --query-file must be provided.")
+
     if "Meta-Llama-3.1" not in args.model_name:
         # Only tested with Meta-Llama-3.1 so far. The system prompt and tokenization would need to
         # be adjusted for other models.
@@ -310,19 +298,17 @@ if __name__ == "__main__":
         raise ValueError("top_k_reranker, if provided, must be smaller than top_k_retriever.")
 
     index, chunks = load_data(args.embedding_model_path, args.path_to_db)
-    
-    
-    tags = []
+
+    all_tags = []
     for i in range(len(chunks["ids"])):
         eltags = chunks["metadatas"][i]["Tag"]
-        if eltags not in tags:
-            tags.append(eltags)
-    print("\nTags: " + str(tags) + "\n")
-    
-    
+        if eltags not in all_tags:
+            all_tags.append(eltags)
+    print("\nAll tags found: " + str(all_tags) + "\n")
+
     reranker = LLMRerank(top_n=args.top_k_reranker) if args.top_k_reranker else None
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
-    
+
     generate_kwargs = {
         "do_sample": True,
         "temperature": args.temp,
@@ -342,31 +328,40 @@ if __name__ == "__main__":
         llm = get_local_llm(
             args.model_name, tokenizer, args.max_new_tokens, args.use_4bit_quant, generate_kwargs
         )
-    
+
     if args.output_folder and not os.path.exists(args.output_folder):
         print(args.output_folder + " does not exist yet, creating it...")
         os.makedirs(args.output_folder)
-    
-    
+
     # Get the list of queries from the queries file
     query_list = None
     if args.query_file:
         print("Using " + args.query_file + " as query list")
-        query_file = open(args.query_file, "r")
-        query_lines = query_file.readlines()
-        query_file.close()
         
-        query_list = []
-        for query in query_lines:
-            query_list.append(query.replace("\n",""))
-    
+        if args.query_file[-4:] == ".txt":
+            query_file = open(args.query_file, "r")
+            query_lines = query_file.readlines()
+            query_file.close()
+
+            query_list = []
+            for query in query_lines:
+                query_list.append(query.replace("\n", ""))
+        elif args.query_file[-5:] == ".xlsx":
+            query_df = pd.read_excel(args.query_file, header=None)
+            query_list = [q for q in query_df[0]]
+        else:
+            print("Format of query file not supported")
+
     # Loop though all folders if wanting to get query answers for all docs
-    if args.query_all:
-        for tag in tags:
+    if args.folder:
+        tag = get_tag_from_dir(args.folder)
+        if tag not in all_tags:
+            raise ValueError(
+                f"Invalid folder. Corresponding {tag=} not found in set of all tags: {all_tags}."
+            )
+        print("\n\nApply query to " + tag + " folder only")
+        get_llm_answer(llm, tag, args, query_list)
+    else:
+        for tag in all_tags:
             print("\n\nApply query to " + tag + " folder only")
             get_llm_answer(llm, tag, args, query_list)
-    
-    # Otherwise, get answers either from all documents mixed up, or from a single folder if using --folder parameter
-    else:
-        get_llm_answer(llm, None, args, query_list)
-

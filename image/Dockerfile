@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y tesseract-ocr libtesseract-dev ffmpeg l
 COPY requirements.txt ./
 RUN pip install -r requirements.txt
 
+COPY _utils.py ./
 COPY _defaults.py ./
 COPY embed.py ./
 COPY parse.py ./

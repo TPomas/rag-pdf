@@ -6,13 +6,13 @@
     }
   },
   "transform": {
-    "image": "tpomas/abb_rag:0.0.3",
+    "image": "tpomas/abb_rag:0.0.4",
     "cmd": [
       "/bin/bash",
       "-C"
     ],
     "stdin": [
-	  "python -m query --query-file /pfs/queries/queries.txt --output-folder /pfs/out --path-to-db /pfs/vectordb --model-name meta-llama/Meta-Llama-3.1-8B-Instruct --top-k-retriever 5 --embedding_model_path ENDPOINT --chat-model-endpoint ENDPOINT --query-all"
+	  "python -m query --query-file /pfs/queries/queries.xlsx --output-folder /pfs/out --path-to-db /pfs/vectordb --model-name meta-llama/Meta-Llama-3.1-8B-Instruct --top-k-retriever 5 --embedding_model_path ENDPOINT --chat-model-endpoint ENDPOINT"
     ],
     "env": {
       "PYTHON_UNBUFFERED": "1"

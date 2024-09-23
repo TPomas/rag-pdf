@@ -100,13 +100,13 @@ def download_pach_repo(
     print("Download operation ended")
     return files
 
- def download_data(context):
+def download_data(context):
     data_config = context.get_data_config()
     download_directory = (
             f"/tmp/data-rank{context.distributed.get_rank()}"
     )
     data_dir = os.path.join(download_directory, "data")
-
+    
     files = download_pach_repo(
         data_config["pachyderm"]["host"],
         data_config["pachyderm"]["port"],
@@ -118,7 +118,7 @@ def download_pach_repo(
         data_config["pachyderm"]["previous_commit"],
     )
     print(f"Data dir set to : {data_dir}")
-
+    
     return [des for src, des in files]
 
 if __name__ == "__main__":

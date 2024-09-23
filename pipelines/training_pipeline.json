@@ -1,0 +1,53 @@
+{
+  "pipeline": {
+    "name": "Llama-3-1-finetuning"
+  },
+  "description": "Detects changed files into a repository and triggers a retraining on that dataset",
+  "input": {
+    "pfs": {
+      "name": "data",
+      "repo": "Training_data",
+      "branch": "master",
+      "glob": "/",
+      "empty_files": true
+    }
+  },
+  "transform": {
+    "cmd": [
+      "/bin/sh"
+    ],
+    "stdin": [
+      "python train.py --git-url https://git@github.com:/TPomas/rag-pdf.git --git-ref main --sub-dir pdk_experiment_files --config conf_pdk.yaml --repo <MLDM_REPO> --model <MLDE_MODEL_NAME> --project <MLDM_PROJECT> --use-hf-token"
+    ],
+    "image": "tpomas/abb_training:0.0.2",
+    "secrets": [
+      {
+        "name": "pipeline-secret",
+        "key": "det_master",
+        "env_var": "DET_MASTER"
+      },
+      {
+        "name": "pipeline-secret",
+        "key": "det_user",
+        "env_var": "DET_USER"
+      },
+      {
+        "name": "pipeline-secret",
+        "key": "det_password",
+        "env_var": "DET_PASSWORD"
+      },
+      {
+        "name": "pipeline-secret",
+        "key": "pac-token",
+        "env_var": "PACH_TOKEN"
+      },
+	  {
+        "name": "pipeline-secret",
+        "key": "HUGGING_FACE_HUB_TOKEN",
+        "env_var": "HUGGING_FACE_HUB_TOKEN"
+      }
+    ]
+  },
+  "datumTries": 1,
+  "autoscaling": true
+}

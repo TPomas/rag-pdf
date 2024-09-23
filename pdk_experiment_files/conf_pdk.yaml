@@ -1,0 +1,44 @@
+name: Llama-3.1-8B Finetuning
+data:
+  pachyderm:
+    host:
+    port:
+    repo:
+    branch:
+    token:
+    previous_commit:
+    project:
+environment:
+  environment_variables:
+    - NCCL_DEBUG=INFO
+  image: 
+    gpu: determinedai/environments:cuda-11.8-pytorch-2.0-gpu-95c7a14
+searcher:
+  name: single
+  max_length:
+    batches: 100
+  metric: train_loss
+  smaller_is_better: true
+hyperparameters:
+  model: "meta-llama/Meta-Llama-3.1-8B-Instruct"
+  training_args:
+    output_dir: "/tmp/llm_finetuning"
+    max_steps: 100
+    per_device_train_batch_size: 1
+    gradient_accumulation_steps: 16
+    #optim: "paged_adamw_32bit"
+    #lr_scheduler_type: "cosine"
+    fp16: true
+    logging_strategy: "steps"
+    logging_steps: 10
+    save_strategy: "steps"
+    save_steps: 100
+    learning_rate: 2e-4
+entrypoint: >-
+  python -m determined.launch.torch_distributed
+  python finetune_pdk.py
+resources:
+  slots_per_trial: 2
+max_restarts: 0
+    
+    

@@ -33,7 +33,7 @@ hyperparameters:
     logging_steps: 10
     save_strategy: "steps"
     save_steps: 100
-    learning_rate: 2e-4
+    learning_rate: 0.0002
 entrypoint: >-
   python -m determined.launch.torch_distributed
   python finetune_pdk.py

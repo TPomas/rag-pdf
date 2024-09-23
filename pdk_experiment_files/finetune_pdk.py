@@ -100,13 +100,13 @@ def download_pach_repo(
     print("Download operation ended")
     return files
 
-def download_data(context):
-    data_config = context.get_data_config()
+def download_data(data_config, context):
+    #data_config = context.get_data_config()
     download_directory = (
             f"/tmp/data-rank{context.distributed.get_rank()}"
     )
     data_dir = os.path.join(download_directory, "data")
-    
+
     files = download_pach_repo(
         data_config["pachyderm"]["host"],
         data_config["pachyderm"]["port"],
@@ -118,11 +118,11 @@ def download_data(context):
         data_config["pachyderm"]["previous_commit"],
     )
     print(f"Data dir set to : {data_dir}")
-    
+
     return [des for src, des in files]
 
 if __name__ == "__main__":
-
+    
     info = det.get_cluster_info()
     hparams = info.trial.hparams
     distributed = det.core.DistributedContext.from_torch_distributed()
@@ -134,15 +134,16 @@ if __name__ == "__main__":
             training_args,
         )
         
-        model_id = hparams["model"]
-        model, tokenizer = get_model_and_tokenizer(model_id)
-        
-        data_files = download_data(core_context)
+        data_config = info.user_data
+        data_files = download_data(data_config, core_context)
         
         #dataset_name = hparams["train_data"]
         #dataset_name = files[0] # assume a single file is added at a time
         data = prepare_train_data(data_files)
         data = data.train_test_split(test_size=0.2, seed=42)
+        
+        model_id = hparams["model"]
+        model, tokenizer = get_model_and_tokenizer(model_id)
         
         peft_config = LoraConfig(
             r=8, lora_alpha=16, lora_dropout=0.05, bias="none", task_type="CAUSAL_LM"
@@ -162,4 +163,3 @@ if __name__ == "__main__":
         
         trainer.add_callback(det_callback)
         trainer.train()
-        
